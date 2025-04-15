@@ -1,0 +1,8 @@
+langchain==0.1.12
+langchain-community==0.0.27
+langchain-core==0.1.31
+langchain-groq==0.0.6
+python-dotenv==1.0.1
+faiss-cpu==1.7.4
+sentence-transformers==2.5.1
+torch==2.2.1 
