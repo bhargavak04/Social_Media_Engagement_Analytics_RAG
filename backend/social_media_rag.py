@@ -41,18 +41,23 @@ class SocialMediaEngagementRAG:
         self.initialize_vector_store()
     
     def initialize_vector_store(self):
-        """Create FAISS index from the social media engagement data"""
+        """Create or load FAISS index from the social media engagement data"""
         print("Initializing vector store...")
-        
-        # Generate statistical summaries
-        self._generate_statistical_summaries()
-        
-        # Process the raw data into documents
-        documents = self._create_documents()
-        
-        # Create the vector store
-        self.vector_store = FAISS.from_documents(documents, self.embeddings)
-        print("Vector store initialized successfully!")
+        index_path = "faiss_index"
+        if os.path.exists(index_path):
+            print("Loading existing FAISS index...")
+            self.vector_store = FAISS.load_local(index_path, self.embeddings)
+            print("FAISS index loaded successfully!")
+        else:
+            # Generate statistical summaries
+            self._generate_statistical_summaries()
+            # Process the raw data into documents
+            documents = self._create_documents()
+            # Create the vector store
+            self.vector_store = FAISS.from_documents(documents, self.embeddings)
+            # Save the index for next time
+            self.vector_store.save_local(index_path)
+            print("Vector store initialized and saved successfully!")
     
     def _generate_statistical_summaries(self):
         """Generate statistical summaries to be included in the vector store"""
