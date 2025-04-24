@@ -29,7 +29,7 @@ const chatService = {
       // Get user ID (in production, from Clerk)
       const userId = localStorage.getItem('user_id') || 'demo-user';
       
-      const response = await api.post('/api/chat', {
+      const response = await api.post('/chat', {
         message,
         user_id: userId,
       });
@@ -44,7 +44,7 @@ const chatService = {
   // Get chat history
   getChatHistory: async () => {
     try {
-      const response = await api.get('/api/chat/history');
+      const response = await api.get('/chat/history');
       return response.data.history;
     } catch (error) {
       console.error('Error fetching chat history:', error);
