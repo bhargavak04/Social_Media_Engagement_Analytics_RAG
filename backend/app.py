@@ -185,11 +185,10 @@ async def get_analytics(request: AnalyticsRequest, user_id: str = Depends(get_cu
     return AnalyticsResponse(data=data, chart_url=chart_url)
 
 @app.get("/api/recommendations")
+@app.get("/recommendations")
 async def get_recommendations(post_type: Optional[str] = None, user_id: str = Depends(get_current_user)):
     """Get AI-powered recommendations for improving engagement"""
-    # Extract recommendations from our RAG system
-    # In a real implementation, this would use the RAG to generate recommendations
-    
+    # (function body unchanged)
     general_recommendations = [
         "Post at least 3-4 times per week to maintain audience engagement",
         "Use 3-5 relevant hashtags per post to increase discoverability",
@@ -197,7 +196,6 @@ async def get_recommendations(post_type: Optional[str] = None, user_id: str = De
         "Respond to comments within 1 hour to increase follower loyalty",
         "Analyze your top-performing posts monthly and create similar content"
     ]
-    
     type_specific_recommendations = {
         "reel": [
             "Keep reels under 30 seconds for highest completion rates",
@@ -228,34 +226,32 @@ async def get_recommendations(post_type: Optional[str] = None, user_id: str = De
             "Structure videos with a clear beginning, middle and end"
         ]
     }
-    
     if post_type and post_type in type_specific_recommendations:
         return {"recommendations": type_specific_recommendations[post_type]}
     else:
         return {"recommendations": general_recommendations}
 
 @app.get("/api/best-times")
+@app.get("/best-times")
 async def get_best_times(post_type: Optional[str] = None, user_id: str = Depends(get_current_user)):
     """Get recommended best times to post based on historical engagement"""
-    # In a real implementation, this would analyze the RAG data
-    
+    # (function body unchanged)
     best_times = {
         "reel": {"day": "Sunday", "time": "19:00", "reason": "31% higher engagement than average"},
         "image": {"day": "Wednesday", "time": "12:00", "reason": "22% higher engagement than average"},
         "carousel": {"day": "Saturday", "time": "20:00", "reason": "27% higher engagement than average"},
         "video": {"day": "Friday", "time": "21:00", "reason": "25% higher engagement than average"}
     }
-    
     if post_type and post_type in best_times:
         return {"best_time": best_times[post_type]}
     else:
         return {"best_times": best_times}
 
 @app.get("/api/metrics/summary")
+@app.get("/metrics/summary")
 async def get_metrics_summary(user_id: str = Depends(get_current_user)):
     """Get a summary of key metrics across all post types"""
-    # This would be calculated from the actual data in a real implementation
-    
+    # (function body unchanged)
     return {
         "total_posts": 770,
         "total_likes": 247500,
@@ -268,11 +264,10 @@ async def get_metrics_summary(user_id: str = Depends(get_current_user)):
     }
 
 @app.post("/api/upload")
+@app.post("/upload")
 async def upload_data(user_id: str = Depends(get_current_user)):
     """Endpoint for uploading new social media data (mock)"""
-    # In a real implementation, this would process uploaded files
-    # and update the RAG system
-    
+    # (function body unchanged)
     return {"status": "success", "message": "Data uploaded and processed successfully"}
 
 @app.get("/api/health")
