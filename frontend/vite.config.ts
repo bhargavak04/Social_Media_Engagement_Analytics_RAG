@@ -4,4 +4,15 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+    '/api': {
+      target: 'https://social-media-engagement-analytics-rag.onrender.com/',
+      changeOrigin: true,
+      secure: false,
+      rewrite: (path) => path.replace(/^\/api/, '')
+    },
+
+    },
+  }
 })

@@ -61,10 +61,20 @@ class SocialMediaEngagementRAG:
             del df
         # Load stats from JSON if available
         stats_path = "stats.json"
+        self.stats = None
         if os.path.exists(stats_path):
             import json
             with open(stats_path, "r") as f:
                 self.stats = json.load(f)
+        # If stats is still None, regenerate from CSV
+        if self.stats is None:
+            if not os.path.exists(self.data_path):
+                raise RuntimeError("Stats not found and data file missing. Cannot initialize analytics.")
+            df = pd.read_csv(self.data_path)
+            self._generate_statistical_summaries(df)
+            # self._generate_statistical_summaries should set self.stats
+            if self.stats is None:
+                raise RuntimeError("Failed to generate statistics from data.")
         self._loaded = True
 
     def _generate_statistical_summaries(self, df):
@@ -428,6 +438,10 @@ class SocialMediaEngagementRAG:
         if any(greeting == query_lower.strip() for greeting in greetings):
             return "Hello! How can I help you analyze your social media engagement today?"
 
+        # Fail gracefully if stats is missing
+        if self.stats is None:
+            return "Sorry, analytics data is currently unavailable. Please try again later or contact support."
+        
         # Create the QA chain if not already created
         chain = self.create_qa_chain()
         

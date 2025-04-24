@@ -3,7 +3,7 @@
 import axios from 'axios';
 
 // Set base URL for API requests
-const API_URL = import.meta.env.VITE_API_URL || 'https://social-media-engagement-analytics-rag.onrender.com';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -29,7 +29,7 @@ const chatService = {
       // Get user ID (in production, from Clerk)
       const userId = localStorage.getItem('user_id') || 'demo-user';
       
-      const response = await api.post('/chat', {
+      const response = await api.post('/api/chat', {
         message,
         user_id: userId,
       });
@@ -44,7 +44,7 @@ const chatService = {
   // Get chat history
   getChatHistory: async () => {
     try {
-      const response = await api.get('/chat/history');
+      const response = await api.get('/api/chat/history');
       return response.data.history;
     } catch (error) {
       console.error('Error fetching chat history:', error);
