@@ -64,6 +64,11 @@ async def get_current_user():
     return "test_user-123"
 
 # Routes
+
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, user_id: str = Depends(get_current_user)):
     """Process a chat message and return a response from the RAG system"""

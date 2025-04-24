@@ -10,7 +10,7 @@ export default defineConfig({
       target: 'https://social-media-engagement-analytics-rag.onrender.com/',
       changeOrigin: true,
       secure: false,
-      rewrite: (path) => path.replace(/^\/api/, '')
+
     },
 
     },
