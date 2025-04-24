@@ -20,12 +20,24 @@ os.environ["GROQ_API_KEY"] = "gsk_R7iiNf6w5xSkJ2BkGrxwWGdyb3FY7RzTrOTa1XvjezuWK8
 class SocialMediaEngagementRAG:
     def __init__(self, data_path="social_media_engagement_data.csv"):
         self.data_path = data_path
-        self.df = pd.read_csv(data_path)
-        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        self.llm = ChatGroq(model="llama3-70b-8192")
+        self.embeddings = None
+        self.llm = None
         self.vector_store = None
-        
-        # Initialize prompt template
+        self.stats = None
+        self.prompt = None
+        self._loaded = False
+
+    def load(self):
+        if self._loaded:
+            return
+        import pandas as pd
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_groq import ChatGroq
+        from langchain_community.vectorstores import FAISS
+        from langchain.prompts import PromptTemplate
+        # Load embeddings and LLM lazily
+        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        self.llm = ChatGroq(model="llama3-8b-8192")  # Use a smaller model for memory
         self.prompt = PromptTemplate.from_template(
             """You are a helpful social media analytics assistant. Based on the following context, 
             answer the user's question. If the user is just greeting you (saying hi, hello, etc.), 
@@ -36,27 +48,36 @@ class SocialMediaEngagementRAG:
             
             Answer: """
         )
-        
-        self.initialize_vector_store()
-    
-    def initialize_vector_store(self):
-        """Create or load FAISS index from the social media engagement data"""
-        print("Initializing vector store...")
+        # Load FAISS index if present
         index_path = "faiss_index"
         if os.path.exists(index_path):
-            print("Loading existing FAISS index...")
             self.vector_store = FAISS.load_local(index_path, self.embeddings)
-            print("FAISS index loaded successfully!")
         else:
-            # Generate statistical summaries
-            self._generate_statistical_summaries()
-            # Process the raw data into documents
-            documents = self._create_documents()
-            # Create the vector store
+            df = pd.read_csv(self.data_path)
+            self._generate_statistical_summaries(df)
+            documents = self._create_documents(df)
             self.vector_store = FAISS.from_documents(documents, self.embeddings)
-            # Save the index for next time
             self.vector_store.save_local(index_path)
-            print("Vector store initialized and saved successfully!")
+            del df
+        # Load stats from JSON if available
+        stats_path = "stats.json"
+        if os.path.exists(stats_path):
+            import json
+            with open(stats_path, "r") as f:
+                self.stats = json.load(f)
+        self._loaded = True
+
+    def _generate_statistical_summaries(self, df):
+        # ... (keep your summary logic, but operate on passed-in df)
+        # Save stats to self.stats and also to stats.json for reuse
+        # After this, df can be deleted
+        pass
+
+    def _create_documents(self, df):
+        # ... (operate on passed-in df)
+        pass
+    
+
     
     def _generate_statistical_summaries(self):
         """Generate statistical summaries to be included in the vector store"""
@@ -400,7 +421,7 @@ class SocialMediaEngagementRAG:
         return ChatPromptTemplate.from_template(template) | self.llm
     
     def query(self, query: str, chat_history: List[tuple] = None) -> str:
-        """Process a query using the RAG system"""
+        self.load()
         # Check for greetings
         query_lower = query.lower()
         greetings = ['hi', 'hello', 'hey', 'greetings']
@@ -471,29 +492,10 @@ class SocialMediaEngagementRAG:
             "chat_history": "\n".join(formatted_history) if formatted_history else ""
         })
         
+        self._unload()
+        
         return result.content
     
     def generate_charts(self, chart_type="engagement_by_post_type"):
         """Generate visualization charts for various analytics"""
         pass
-
-# Example usage
-if __name__ == "__main__":
-    rag = SocialMediaEngagementRAG()
-    
-    # Example queries
-    test_queries = [
-        "What's the best type of post for maximizing engagement?",
-        "When is the best time to post reels?",
-        "How do carousel posts compare to single images?",
-        "What recommendations do you have to improve my video content?"
-    ]
-    
-    for query in test_queries:
-        print(f"\nQuery: {query}")
-        response = rag.query(query)
-        print(f"Response: {response}")
-    
-    # Generate sample chart
-    chart_file = rag.generate_charts()
-    print(f"\nChart generated: {chart_file}")
