@@ -476,48 +476,6 @@ class SocialMediaEngagementRAG:
     def generate_charts(self, chart_type="engagement_by_post_type"):
         """Generate visualization charts for various analytics"""
         pass
-            melted = pd.melt(data, id_vars=['post_type'], value_vars=metrics, 
-                             var_name='Metric', value_name='Average Count')
-            
-            # Create the grouped bar chart
-            sns.barplot(x='post_type', y='Average Count', hue='Metric', data=melted)
-            plt.title('Average Engagement Metrics by Post Type')
-            plt.xlabel('Post Type')
-            plt.ylabel('Average Count')
-            plt.yscale('log')  # Log scale to handle different magnitudes
-            
-        elif chart_type == "best_posting_times":
-            # Create heatmap showing engagement by hour and day
-            pivot = self.df.pivot_table(
-                index='day_of_week', 
-                columns='hour', 
-                values='engagement_rate',
-                aggfunc='mean'
-            )
-            
-            # Order days of week properly
-            days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            pivot = pivot.reindex(days_order)
-            
-            # Create the heatmap
-            sns.heatmap(pivot, cmap='YlGnBu', annot=False, fmt='.3f')
-            plt.title('Engagement Rate by Day and Hour')
-            plt.xlabel('Hour of Day')
-            plt.ylabel('Day of Week')
-            
-        elif chart_type == "post_type_distribution":
-            # Create pie chart showing distribution of post types
-            self.df['post_type'].value_counts().plot(kind='pie', autopct='%1.1f%%')
-            plt.title('Distribution of Post Types')
-            plt.ylabel('')
-            
-        # Save the figure to a temporary file
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        filename = f"chart_{chart_type}_{timestamp}.png"
-        plt.savefig(filename)
-        plt.close()
-        
-        return filename
 
 # Example usage
 if __name__ == "__main__":
