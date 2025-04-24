@@ -131,5 +131,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📬 Contact
 
-**Your Name** – [GitHub](https://github.com/yourusername)  
+**Your Name** – [GitHub](https://github.com/bhargavak04)  
 **Project Link** – [Social_Media_Engagement_Analytics_RAG](https://github.com/bhargavak/Social_Media_Engagement_Analytics_RAG)
