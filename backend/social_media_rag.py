@@ -10,8 +10,7 @@ from langchain.chains import create_history_aware_retriever, create_retrieval_ch
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.prompts import PromptTemplate
 from typing import List, Dict, Any
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 from datetime import datetime
 import json
 
@@ -476,14 +475,7 @@ class SocialMediaEngagementRAG:
     
     def generate_charts(self, chart_type="engagement_by_post_type"):
         """Generate visualization charts for various analytics"""
-        plt.figure(figsize=(10, 6))
-        
-        if chart_type == "engagement_by_post_type":
-            # Create a grouped bar chart for engagement metrics by post type
-            metrics = ['likes', 'comments', 'shares', 'views']
-            data = self.df.groupby('post_type')[metrics].mean().reset_index()
-            
-            # Melt the data for seaborn
+        pass
             melted = pd.melt(data, id_vars=['post_type'], value_vars=metrics, 
                              var_name='Metric', value_name='Average Count')
             
