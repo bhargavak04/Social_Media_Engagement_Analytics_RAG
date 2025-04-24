@@ -69,6 +69,10 @@ async def get_current_user():
 def root():
     return {"status": "ok"}
 
+@app.post("/api/ping")
+async def ping():
+    return {"pong": True}
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, user_id: str = Depends(get_current_user)):
     """Process a chat message and return a response from the RAG system"""
