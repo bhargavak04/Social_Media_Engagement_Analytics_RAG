@@ -1,8 +1,8 @@
 {
-  "buildCommand": "npm install --force && npm run build --no-optional",
+  "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "framework": "vite",
-  "installCommand": "npm install --force",
+  "installCommand": "cd frontend && npm install --legacy-peer-deps",
   "rewrites": [
     {
       "source": "/(.*)",
