@@ -17,23 +17,23 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],  # Frontend URLs
+    allow_origins=["*"],  # Frontend URLs
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Initialize the RAG system
-rag_system = SocialMediaEngagementRAG()
-
-
+try:
+    rag_system = SocialMediaEngagementRAG()
+    rag_system.load()  # Ensure the system is loaded before handling requests
+except Exception as e:
+    print(f"Error initializing RAG system: {e}")
+    raise
 
 # Simple in-memory chat history store
 # In production, use a database
 chat_histories = {}
-
-# Initialize the RAG system
-rag_system = SocialMediaEngagementRAG()
 
 # OAuth2 scheme for token authentication
 # In a real app, use proper auth with Clerk or another provider
@@ -64,30 +64,46 @@ async def get_current_user():
     return "test_user-123"
 
 # Routes
+
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
+@app.post("/api/ping")
+async def ping():
+    return {"pong": True}
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, user_id: str = Depends(get_current_user)):
     """Process a chat message and return a response from the RAG system"""
-    # Get existing chat history or create new one
-    if user_id not in chat_histories:
-        chat_histories[user_id] = []
-    
-    # Add message to history and limit size
-    chat_histories[user_id].append({"role": "user", "content": message.message})
-    # Keep only last 10 messages for context window
-    if len(chat_histories[user_id]) > 20:
-        chat_histories[user_id] = chat_histories[user_id][-20:]
-    
-    # Format chat history for our RAG system
-    formatted_history = [(msg["content"], None) if msg["role"] == "user" else (None, msg["content"]) 
-                         for msg in chat_histories[user_id][:-1]]
-    
-    # Get response from RAG system
-    response = rag_system.query(message.message, formatted_history)
-    
-    # Add response to history
-    chat_histories[user_id].append({"role": "assistant", "content": response})
-    
-    return ChatResponse(response=response)
+    try:
+        # Get existing chat history or create new one
+        if user_id not in chat_histories:
+            chat_histories[user_id] = []
+        
+        # Add message to history and limit size
+        chat_histories[user_id].append({"role": "user", "content": message.message})
+        # Keep only last 10 messages for context window
+        if len(chat_histories[user_id]) > 20:
+            chat_histories[user_id] = chat_histories[user_id][-20:]
+        
+        # Format chat history for our RAG system
+        formatted_history = [(msg["content"], None) if msg["role"] == "user" else (None, msg["content"]) 
+                             for msg in chat_histories[user_id][:-1]]
+        
+        # Get response from RAG system
+        response = rag_system.query(message.message, formatted_history)
+        
+        # Add response to history
+        chat_histories[user_id].append({"role": "assistant", "content": response})
+        
+        return ChatResponse(response=response)
+    except Exception as e:
+        print(f"Error in chat endpoint: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request"
+        )
 
 @app.get("/api/chat/history")
 async def get_chat_history(user_id: str = Depends(get_current_user)):
@@ -185,11 +201,10 @@ async def get_analytics(request: AnalyticsRequest, user_id: str = Depends(get_cu
     return AnalyticsResponse(data=data, chart_url=chart_url)
 
 @app.get("/api/recommendations")
+@app.get("/recommendations")
 async def get_recommendations(post_type: Optional[str] = None, user_id: str = Depends(get_current_user)):
     """Get AI-powered recommendations for improving engagement"""
-    # Extract recommendations from our RAG system
-    # In a real implementation, this would use the RAG to generate recommendations
-    
+    # (function body unchanged)
     general_recommendations = [
         "Post at least 3-4 times per week to maintain audience engagement",
         "Use 3-5 relevant hashtags per post to increase discoverability",
@@ -197,7 +212,6 @@ async def get_recommendations(post_type: Optional[str] = None, user_id: str = De
         "Respond to comments within 1 hour to increase follower loyalty",
         "Analyze your top-performing posts monthly and create similar content"
     ]
-    
     type_specific_recommendations = {
         "reel": [
             "Keep reels under 30 seconds for highest completion rates",
@@ -228,34 +242,32 @@ async def get_recommendations(post_type: Optional[str] = None, user_id: str = De
             "Structure videos with a clear beginning, middle and end"
         ]
     }
-    
     if post_type and post_type in type_specific_recommendations:
         return {"recommendations": type_specific_recommendations[post_type]}
     else:
         return {"recommendations": general_recommendations}
 
 @app.get("/api/best-times")
+@app.get("/best-times")
 async def get_best_times(post_type: Optional[str] = None, user_id: str = Depends(get_current_user)):
     """Get recommended best times to post based on historical engagement"""
-    # In a real implementation, this would analyze the RAG data
-    
+    # (function body unchanged)
     best_times = {
         "reel": {"day": "Sunday", "time": "19:00", "reason": "31% higher engagement than average"},
         "image": {"day": "Wednesday", "time": "12:00", "reason": "22% higher engagement than average"},
         "carousel": {"day": "Saturday", "time": "20:00", "reason": "27% higher engagement than average"},
         "video": {"day": "Friday", "time": "21:00", "reason": "25% higher engagement than average"}
     }
-    
     if post_type and post_type in best_times:
         return {"best_time": best_times[post_type]}
     else:
         return {"best_times": best_times}
 
 @app.get("/api/metrics/summary")
+@app.get("/metrics/summary")
 async def get_metrics_summary(user_id: str = Depends(get_current_user)):
     """Get a summary of key metrics across all post types"""
-    # This would be calculated from the actual data in a real implementation
-    
+    # (function body unchanged)
     return {
         "total_posts": 770,
         "total_likes": 247500,
@@ -268,11 +280,10 @@ async def get_metrics_summary(user_id: str = Depends(get_current_user)):
     }
 
 @app.post("/api/upload")
+@app.post("/upload")
 async def upload_data(user_id: str = Depends(get_current_user)):
     """Endpoint for uploading new social media data (mock)"""
-    # In a real implementation, this would process uploaded files
-    # and update the RAG system
-    
+    # (function body unchanged)
     return {"status": "success", "message": "Data uploaded and processed successfully"}
 
 @app.get("/api/health")
@@ -283,4 +294,6 @@ async def health_check():
 # Run with: uvicorn app:app --reload
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    # Use the PORT environment variable that Render provides
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

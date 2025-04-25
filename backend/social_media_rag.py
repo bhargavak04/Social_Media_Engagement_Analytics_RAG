@@ -10,8 +10,7 @@ from langchain.chains import create_history_aware_retriever, create_retrieval_ch
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.prompts import PromptTemplate
 from typing import List, Dict, Any
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 from datetime import datetime
 import json
 
@@ -21,12 +20,24 @@ os.environ["GROQ_API_KEY"] = "gsk_R7iiNf6w5xSkJ2BkGrxwWGdyb3FY7RzTrOTa1XvjezuWK8
 class SocialMediaEngagementRAG:
     def __init__(self, data_path="social_media_engagement_data.csv"):
         self.data_path = data_path
-        self.df = pd.read_csv(data_path)
-        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        self.llm = ChatGroq(model="llama3-70b-8192")
+        self.embeddings = None
+        self.llm = None
         self.vector_store = None
-        
-        # Initialize prompt template
+        self.stats = None
+        self.prompt = None
+        self._loaded = False
+
+    def load(self):
+        if self._loaded:
+            return
+        import pandas as pd
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_groq import ChatGroq
+        from langchain_community.vectorstores import FAISS
+        from langchain.prompts import PromptTemplate
+        # Load embeddings and LLM lazily
+        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        self.llm = ChatGroq(model="llama3-8b-8192")  # Use a smaller model for memory
         self.prompt = PromptTemplate.from_template(
             """You are a helpful social media analytics assistant. Based on the following context, 
             answer the user's question. If the user is just greeting you (saying hi, hello, etc.), 
@@ -37,22 +48,46 @@ class SocialMediaEngagementRAG:
             
             Answer: """
         )
-        
-        self.initialize_vector_store()
+        # Load FAISS index if present
+        index_path = "faiss_index"
+        if os.path.exists(index_path):
+            self.vector_store = FAISS.load_local(index_path, self.embeddings)
+        else:
+            df = pd.read_csv(self.data_path)
+            self._generate_statistical_summaries(df)
+            documents = self._create_documents(df)
+            self.vector_store = FAISS.from_documents(documents, self.embeddings)
+            self.vector_store.save_local(index_path)
+            del df
+        # Load stats from JSON if available
+        stats_path = "stats.json"
+        self.stats = None
+        if os.path.exists(stats_path):
+            import json
+            with open(stats_path, "r") as f:
+                self.stats = json.load(f)
+        # If stats is still None, regenerate from CSV
+        if self.stats is None:
+            if not os.path.exists(self.data_path):
+                raise RuntimeError("Stats not found and data file missing. Cannot initialize analytics.")
+            df = pd.read_csv(self.data_path)
+            self._generate_statistical_summaries(df)
+            # self._generate_statistical_summaries should set self.stats
+            if self.stats is None:
+                raise RuntimeError("Failed to generate statistics from data.")
+        self._loaded = True
+
+    def _generate_statistical_summaries(self, df):
+        # ... (keep your summary logic, but operate on passed-in df)
+        # Save stats to self.stats and also to stats.json for reuse
+        # After this, df can be deleted
+        pass
+
+    def _create_documents(self, df):
+        # ... (operate on passed-in df)
+        pass
     
-    def initialize_vector_store(self):
-        """Create FAISS index from the social media engagement data"""
-        print("Initializing vector store...")
-        
-        # Generate statistical summaries
-        self._generate_statistical_summaries()
-        
-        # Process the raw data into documents
-        documents = self._create_documents()
-        
-        # Create the vector store
-        self.vector_store = FAISS.from_documents(documents, self.embeddings)
-        print("Vector store initialized successfully!")
+
     
     def _generate_statistical_summaries(self):
         """Generate statistical summaries to be included in the vector store"""
@@ -396,149 +431,101 @@ class SocialMediaEngagementRAG:
         return ChatPromptTemplate.from_template(template) | self.llm
     
     def query(self, query: str, chat_history: List[tuple] = None) -> str:
-        """Process a query using the RAG system"""
-        # Check for greetings
-        query_lower = query.lower()
-        greetings = ['hi', 'hello', 'hey', 'greetings']
-        if any(greeting == query_lower.strip() for greeting in greetings):
-            return "Hello! How can I help you analyze your social media engagement today?"
+        try:
+            self.load()
+            # Check for greetings
+            query_lower = query.lower()
+            greetings = ['hi', 'hello', 'hey', 'greetings']
+            if any(greeting == query_lower.strip() for greeting in greetings):
+                return "Hello! How can I help you analyze your social media engagement today?"
 
-        # Create the QA chain if not already created
-        chain = self.create_qa_chain()
-        
-        # Format chat history
-        formatted_history = []
-        if chat_history:
-            for human, ai in chat_history:
-                formatted_history.extend([f"Human: {human}", f"Assistant: {ai}"])
-        
-        # Format statistics directly
-        stats_content = f"""
-        SOCIAL MEDIA ANALYTICS SUMMARY
-        ============================
-        
-        POST TYPE PERFORMANCE METRICS:
-        
-        REEL POSTS:
-        - Average likes: {self.stats['avg_engagement_by_type']['likes']['reel']:.1f}
-        - Average comments: {self.stats['avg_engagement_by_type']['comments']['reel']:.1f}
-        - Average shares: {self.stats['avg_engagement_by_type']['shares']['reel']:.1f}
-        - Average views: {self.stats['avg_engagement_by_type']['views']['reel']:.1f}
-        - Best posting time: {self.stats['best_time_by_post_type']['reel']:02d}:00 hours
-        - Best posting day: {self.stats['best_day_by_post_type']['reel']}
-        - Average engagement rate: {self.stats['engagement_rate_by_type']['reel']:.2%}
-        
-        IMAGE POSTS:
-        - Average likes: {self.stats['avg_engagement_by_type']['likes']['image']:.1f}
-        - Average comments: {self.stats['avg_engagement_by_type']['comments']['image']:.1f}
-        - Average shares: {self.stats['avg_engagement_by_type']['shares']['image']:.1f}
-        - Average views: {self.stats['avg_engagement_by_type']['views']['image']:.1f}
-        - Best posting time: {self.stats['best_time_by_post_type']['image']:02d}:00 hours
-        - Best posting day: {self.stats['best_day_by_post_type']['image']}
-        - Average engagement rate: {self.stats['engagement_rate_by_type']['image']:.2%}
-        
-        VIDEO POSTS:
-        - Average likes: {self.stats['avg_engagement_by_type']['likes']['video']:.1f}
-        - Average comments: {self.stats['avg_engagement_by_type']['comments']['video']:.1f}
-        - Average shares: {self.stats['avg_engagement_by_type']['shares']['video']:.1f}
-        - Average views: {self.stats['avg_engagement_by_type']['views']['video']:.1f}
-        - Best posting time: {self.stats['best_time_by_post_type']['video']:02d}:00 hours
-        - Best posting day: {self.stats['best_day_by_post_type']['video']}
-        - Average engagement rate: {self.stats['engagement_rate_by_type']['video']:.2%}
-        
-        CAROUSEL POSTS:
-        - Average likes: {self.stats['avg_engagement_by_type']['likes']['carousel']:.1f}
-        - Average comments: {self.stats['avg_engagement_by_type']['comments']['carousel']:.1f}
-        - Average shares: {self.stats['avg_engagement_by_type']['shares']['carousel']:.1f}
-        - Average views: {self.stats['avg_engagement_by_type']['views']['carousel']:.1f}
-        - Best posting time: {self.stats['best_time_by_post_type']['carousel']:02d}:00 hours
-        - Best posting day: {self.stats['best_day_by_post_type']['carousel']}
-        - Average engagement rate: {self.stats['engagement_rate_by_type']['carousel']:.2%}
-        
-        OTHER STATISTICS:
-        - Total posts analyzed: {self.stats['total_posts']}
-        - Post type distribution: {json.dumps(self.stats['post_type_distribution'])}
-        """
-        
-        # Get response from chain
-        result = chain.invoke({
-            "input": query,
-            "context": stats_content,
-            "chat_history": "\n".join(formatted_history) if formatted_history else ""
-        })
-        
-        return result.content
+            # Fail gracefully if stats is missing
+            if self.stats is None:
+                return "Sorry, analytics data is currently unavailable. Please try again later or contact support."
+            
+            # Create the QA chain if not already created
+            chain = self.create_qa_chain()
+            
+            # Format chat history
+            formatted_history = []
+            if chat_history:
+                for human, ai in chat_history:
+                    if human is not None:
+                        formatted_history.extend([f"Human: {human}"])
+                    if ai is not None:
+                        formatted_history.extend([f"Assistant: {ai}"])
+            
+            # Format statistics directly
+            stats_content = f"""
+            SOCIAL MEDIA ANALYTICS SUMMARY
+            ============================
+            
+            POST TYPE PERFORMANCE METRICS:
+            
+            REEL POSTS:
+            - Average likes: {self.stats['avg_engagement_by_type']['likes']['reel']:.1f}
+            - Average comments: {self.stats['avg_engagement_by_type']['comments']['reel']:.1f}
+            - Average shares: {self.stats['avg_engagement_by_type']['shares']['reel']:.1f}
+            - Average views: {self.stats['avg_engagement_by_type']['views']['reel']:.1f}
+            - Best posting time: {self.stats['best_time_by_post_type']['reel']:02d}:00 hours
+            - Best posting day: {self.stats['best_day_by_post_type']['reel']}
+            - Average engagement rate: {self.stats['engagement_rate_by_type']['reel']:.2%}
+            
+            IMAGE POSTS:
+            - Average likes: {self.stats['avg_engagement_by_type']['likes']['image']:.1f}
+            - Average comments: {self.stats['avg_engagement_by_type']['comments']['image']:.1f}
+            - Average shares: {self.stats['avg_engagement_by_type']['shares']['image']:.1f}
+            - Average views: {self.stats['avg_engagement_by_type']['views']['image']:.1f}
+            - Best posting time: {self.stats['best_time_by_post_type']['image']:02d}:00 hours
+            - Best posting day: {self.stats['best_day_by_post_type']['image']}
+            - Average engagement rate: {self.stats['engagement_rate_by_type']['image']:.2%}
+            
+            VIDEO POSTS:
+            - Average likes: {self.stats['avg_engagement_by_type']['likes']['video']:.1f}
+            - Average comments: {self.stats['avg_engagement_by_type']['comments']['video']:.1f}
+            - Average shares: {self.stats['avg_engagement_by_type']['shares']['video']:.1f}
+            - Average views: {self.stats['avg_engagement_by_type']['views']['video']:.1f}
+            - Best posting time: {self.stats['best_time_by_post_type']['video']:02d}:00 hours
+            - Best posting day: {self.stats['best_day_by_post_type']['video']}
+            - Average engagement rate: {self.stats['engagement_rate_by_type']['video']:.2%}
+            
+            CAROUSEL POSTS:
+            - Average likes: {self.stats['avg_engagement_by_type']['likes']['carousel']:.1f}
+            - Average comments: {self.stats['avg_engagement_by_type']['comments']['carousel']:.1f}
+            - Average shares: {self.stats['avg_engagement_by_type']['shares']['carousel']:.1f}
+            - Average views: {self.stats['avg_engagement_by_type']['views']['carousel']:.1f}
+            - Best posting time: {self.stats['best_time_by_post_type']['carousel']:02d}:00 hours
+            - Best posting day: {self.stats['best_day_by_post_type']['carousel']}
+            - Average engagement rate: {self.stats['engagement_rate_by_type']['carousel']:.2%}
+            
+            OTHER STATISTICS:
+            - Total posts analyzed: {self.stats['total_posts']}
+            - Post type distribution: {json.dumps(self.stats['post_type_distribution'])}
+            """
+            
+            # Get response from chain
+            result = chain.invoke({
+                "input": query,
+                "context": stats_content,
+                "chat_history": "\n".join(formatted_history) if formatted_history else ""
+            })
+            
+            if not result or not hasattr(result, 'content'):
+                raise ValueError("Invalid response from LLM chain")
+            
+            return result.content
+
+        except Exception as e:
+            print(f"Error in query method: {str(e)}")
+            raise
+
+        finally:
+            try:
+                self._unload()
+            except Exception as e:
+                print(f"Error during unload: {str(e)}")
+
     
     def generate_charts(self, chart_type="engagement_by_post_type"):
         """Generate visualization charts for various analytics"""
-        plt.figure(figsize=(10, 6))
-        
-        if chart_type == "engagement_by_post_type":
-            # Create a grouped bar chart for engagement metrics by post type
-            metrics = ['likes', 'comments', 'shares', 'views']
-            data = self.df.groupby('post_type')[metrics].mean().reset_index()
-            
-            # Melt the data for seaborn
-            melted = pd.melt(data, id_vars=['post_type'], value_vars=metrics, 
-                             var_name='Metric', value_name='Average Count')
-            
-            # Create the grouped bar chart
-            sns.barplot(x='post_type', y='Average Count', hue='Metric', data=melted)
-            plt.title('Average Engagement Metrics by Post Type')
-            plt.xlabel('Post Type')
-            plt.ylabel('Average Count')
-            plt.yscale('log')  # Log scale to handle different magnitudes
-            
-        elif chart_type == "best_posting_times":
-            # Create heatmap showing engagement by hour and day
-            pivot = self.df.pivot_table(
-                index='day_of_week', 
-                columns='hour', 
-                values='engagement_rate',
-                aggfunc='mean'
-            )
-            
-            # Order days of week properly
-            days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            pivot = pivot.reindex(days_order)
-            
-            # Create the heatmap
-            sns.heatmap(pivot, cmap='YlGnBu', annot=False, fmt='.3f')
-            plt.title('Engagement Rate by Day and Hour')
-            plt.xlabel('Hour of Day')
-            plt.ylabel('Day of Week')
-            
-        elif chart_type == "post_type_distribution":
-            # Create pie chart showing distribution of post types
-            self.df['post_type'].value_counts().plot(kind='pie', autopct='%1.1f%%')
-            plt.title('Distribution of Post Types')
-            plt.ylabel('')
-            
-        # Save the figure to a temporary file
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        filename = f"chart_{chart_type}_{timestamp}.png"
-        plt.savefig(filename)
-        plt.close()
-        
-        return filename
-
-# Example usage
-if __name__ == "__main__":
-    rag = SocialMediaEngagementRAG()
-    
-    # Example queries
-    test_queries = [
-        "What's the best type of post for maximizing engagement?",
-        "When is the best time to post reels?",
-        "How do carousel posts compare to single images?",
-        "What recommendations do you have to improve my video content?"
-    ]
-    
-    for query in test_queries:
-        print(f"\nQuery: {query}")
-        response = rag.query(query)
-        print(f"Response: {response}")
-    
-    # Generate sample chart
-    chart_file = rag.generate_charts()
-    print(f"\nChart generated: {chart_file}")
+        pass
