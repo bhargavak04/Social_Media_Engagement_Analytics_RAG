@@ -431,84 +431,100 @@ class SocialMediaEngagementRAG:
         return ChatPromptTemplate.from_template(template) | self.llm
     
     def query(self, query: str, chat_history: List[tuple] = None) -> str:
-        self.load()
-        # Check for greetings
-        query_lower = query.lower()
-        greetings = ['hi', 'hello', 'hey', 'greetings']
-        if any(greeting == query_lower.strip() for greeting in greetings):
-            return "Hello! How can I help you analyze your social media engagement today?"
+        try:
+            self.load()
+            # Check for greetings
+            query_lower = query.lower()
+            greetings = ['hi', 'hello', 'hey', 'greetings']
+            if any(greeting == query_lower.strip() for greeting in greetings):
+                return "Hello! How can I help you analyze your social media engagement today?"
 
-        # Fail gracefully if stats is missing
-        if self.stats is None:
-            return "Sorry, analytics data is currently unavailable. Please try again later or contact support."
-        
-        # Create the QA chain if not already created
-        chain = self.create_qa_chain()
-        
-        # Format chat history
-        formatted_history = []
-        if chat_history:
-            for human, ai in chat_history:
-                formatted_history.extend([f"Human: {human}", f"Assistant: {ai}"])
-        
-        # Format statistics directly
-        stats_content = f"""
-        SOCIAL MEDIA ANALYTICS SUMMARY
-        ============================
-        
-        POST TYPE PERFORMANCE METRICS:
-        
-        REEL POSTS:
-        - Average likes: {self.stats['avg_engagement_by_type']['likes']['reel']:.1f}
-        - Average comments: {self.stats['avg_engagement_by_type']['comments']['reel']:.1f}
-        - Average shares: {self.stats['avg_engagement_by_type']['shares']['reel']:.1f}
-        - Average views: {self.stats['avg_engagement_by_type']['views']['reel']:.1f}
-        - Best posting time: {self.stats['best_time_by_post_type']['reel']:02d}:00 hours
-        - Best posting day: {self.stats['best_day_by_post_type']['reel']}
-        - Average engagement rate: {self.stats['engagement_rate_by_type']['reel']:.2%}
-        
-        IMAGE POSTS:
-        - Average likes: {self.stats['avg_engagement_by_type']['likes']['image']:.1f}
-        - Average comments: {self.stats['avg_engagement_by_type']['comments']['image']:.1f}
-        - Average shares: {self.stats['avg_engagement_by_type']['shares']['image']:.1f}
-        - Average views: {self.stats['avg_engagement_by_type']['views']['image']:.1f}
-        - Best posting time: {self.stats['best_time_by_post_type']['image']:02d}:00 hours
-        - Best posting day: {self.stats['best_day_by_post_type']['image']}
-        - Average engagement rate: {self.stats['engagement_rate_by_type']['image']:.2%}
-        
-        VIDEO POSTS:
-        - Average likes: {self.stats['avg_engagement_by_type']['likes']['video']:.1f}
-        - Average comments: {self.stats['avg_engagement_by_type']['comments']['video']:.1f}
-        - Average shares: {self.stats['avg_engagement_by_type']['shares']['video']:.1f}
-        - Average views: {self.stats['avg_engagement_by_type']['views']['video']:.1f}
-        - Best posting time: {self.stats['best_time_by_post_type']['video']:02d}:00 hours
-        - Best posting day: {self.stats['best_day_by_post_type']['video']}
-        - Average engagement rate: {self.stats['engagement_rate_by_type']['video']:.2%}
-        
-        CAROUSEL POSTS:
-        - Average likes: {self.stats['avg_engagement_by_type']['likes']['carousel']:.1f}
-        - Average comments: {self.stats['avg_engagement_by_type']['comments']['carousel']:.1f}
-        - Average shares: {self.stats['avg_engagement_by_type']['shares']['carousel']:.1f}
-        - Average views: {self.stats['avg_engagement_by_type']['views']['carousel']:.1f}
-        - Best posting time: {self.stats['best_time_by_post_type']['carousel']:02d}:00 hours
-        - Best posting day: {self.stats['best_day_by_post_type']['carousel']}
-        - Average engagement rate: {self.stats['engagement_rate_by_type']['carousel']:.2%}
-        
-        OTHER STATISTICS:
-        - Total posts analyzed: {self.stats['total_posts']}
-        - Post type distribution: {json.dumps(self.stats['post_type_distribution'])}
-        """
-        
-        # Get response from chain
-        result = chain.invoke({
-            "input": query,
-            "context": stats_content,
-            "chat_history": "\n".join(formatted_history) if formatted_history else ""
-        })
-        
-        self._unload()
-        
-        return result.content
+            # Fail gracefully if stats is missing
+            if self.stats is None:
+                return "Sorry, analytics data is currently unavailable. Please try again later or contact support."
+            
+            # Create the QA chain if not already created
+            chain = self.create_qa_chain()
+            
+            # Format chat history
+            formatted_history = []
+            if chat_history:
+                for human, ai in chat_history:
+                    if human is not None:
+                        formatted_history.extend([f"Human: {human}"])
+                    if ai is not None:
+                        formatted_history.extend([f"Assistant: {ai}"])
+            
+            # Format statistics directly
+            stats_content = f"""
+            SOCIAL MEDIA ANALYTICS SUMMARY
+            ============================
+            
+            POST TYPE PERFORMANCE METRICS:
+            
+            REEL POSTS:
+            - Average likes: {self.stats['avg_engagement_by_type']['likes']['reel']:.1f}
+            - Average comments: {self.stats['avg_engagement_by_type']['comments']['reel']:.1f}
+            - Average shares: {self.stats['avg_engagement_by_type']['shares']['reel']:.1f}
+            - Average views: {self.stats['avg_engagement_by_type']['views']['reel']:.1f}
+            - Best posting time: {self.stats['best_time_by_post_type']['reel']:02d}:00 hours
+            - Best posting day: {self.stats['best_day_by_post_type']['reel']}
+            - Average engagement rate: {self.stats['engagement_rate_by_type']['reel']:.2%}
+            
+            IMAGE POSTS:
+            - Average likes: {self.stats['avg_engagement_by_type']['likes']['image']:.1f}
+            - Average comments: {self.stats['avg_engagement_by_type']['comments']['image']:.1f}
+            - Average shares: {self.stats['avg_engagement_by_type']['shares']['image']:.1f}
+            - Average views: {self.stats['avg_engagement_by_type']['views']['image']:.1f}
+            - Best posting time: {self.stats['best_time_by_post_type']['image']:02d}:00 hours
+            - Best posting day: {self.stats['best_day_by_post_type']['image']}
+            - Average engagement rate: {self.stats['engagement_rate_by_type']['image']:.2%}
+            
+            VIDEO POSTS:
+            - Average likes: {self.stats['avg_engagement_by_type']['likes']['video']:.1f}
+            - Average comments: {self.stats['avg_engagement_by_type']['comments']['video']:.1f}
+            - Average shares: {self.stats['avg_engagement_by_type']['shares']['video']:.1f}
+            - Average views: {self.stats['avg_engagement_by_type']['views']['video']:.1f}
+            - Best posting time: {self.stats['best_time_by_post_type']['video']:02d}:00 hours
+            - Best posting day: {self.stats['best_day_by_post_type']['video']}
+            - Average engagement rate: {self.stats['engagement_rate_by_type']['video']:.2%}
+            
+            CAROUSEL POSTS:
+            - Average likes: {self.stats['avg_engagement_by_type']['likes']['carousel']:.1f}
+            - Average comments: {self.stats['avg_engagement_by_type']['comments']['carousel']:.1f}
+            - Average shares: {self.stats['avg_engagement_by_type']['shares']['carousel']:.1f}
+            - Average views: {self.stats['avg_engagement_by_type']['views']['carousel']:.1f}
+            - Best posting time: {self.stats['best_time_by_post_type']['carousel']:02d}:00 hours
+            - Best posting day: {self.stats['best_day_by_post_type']['carousel']}
+            - Average engagement rate: {self.stats['engagement_rate_by_type']['carousel']:.2%}
+            
+            OTHER STATISTICS:
+            - Total posts analyzed: {self.stats['total_posts']}
+            - Post type distribution: {json.dumps(self.stats['post_type_distribution'])}
+            """
+            
+            # Get response from chain
+            result = chain.invoke({
+                "input": query,
+                "context": stats_content,
+                "chat_history": "\n".join(formatted_history) if formatted_history else ""
+            })
+            
+            if not result or not hasattr(result, 'content'):
+                raise ValueError("Invalid response from LLM chain")
+            
+            return result.content
+
+        except Exception as e:
+            print(f"Error in query method: {str(e)}")
+            raise
+
+        finally:
+            try:
+                self._unload()
+            except Exception as e:
+                print(f"Error during unload: {str(e)}")
+
     
     def generate_charts(self, chart_type="engagement_by_post_type"):
         """Generate visualization charts for various analytics"""

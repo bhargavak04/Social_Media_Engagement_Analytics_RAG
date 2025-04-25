@@ -24,16 +24,16 @@ app.add_middleware(
 )
 
 # Initialize the RAG system
-rag_system = SocialMediaEngagementRAG()
-
-
+try:
+    rag_system = SocialMediaEngagementRAG()
+    rag_system.load()  # Ensure the system is loaded before handling requests
+except Exception as e:
+    print(f"Error initializing RAG system: {e}")
+    raise
 
 # Simple in-memory chat history store
 # In production, use a database
 chat_histories = {}
-
-# Initialize the RAG system
-rag_system = SocialMediaEngagementRAG()
 
 # OAuth2 scheme for token authentication
 # In a real app, use proper auth with Clerk or another provider
@@ -76,27 +76,34 @@ async def ping():
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, user_id: str = Depends(get_current_user)):
     """Process a chat message and return a response from the RAG system"""
-    # Get existing chat history or create new one
-    if user_id not in chat_histories:
-        chat_histories[user_id] = []
-    
-    # Add message to history and limit size
-    chat_histories[user_id].append({"role": "user", "content": message.message})
-    # Keep only last 10 messages for context window
-    if len(chat_histories[user_id]) > 20:
-        chat_histories[user_id] = chat_histories[user_id][-20:]
-    
-    # Format chat history for our RAG system
-    formatted_history = [(msg["content"], None) if msg["role"] == "user" else (None, msg["content"]) 
-                         for msg in chat_histories[user_id][:-1]]
-    
-    # Get response from RAG system
-    response = rag_system.query(message.message, formatted_history)
-    
-    # Add response to history
-    chat_histories[user_id].append({"role": "assistant", "content": response})
-    
-    return ChatResponse(response=response)
+    try:
+        # Get existing chat history or create new one
+        if user_id not in chat_histories:
+            chat_histories[user_id] = []
+        
+        # Add message to history and limit size
+        chat_histories[user_id].append({"role": "user", "content": message.message})
+        # Keep only last 10 messages for context window
+        if len(chat_histories[user_id]) > 20:
+            chat_histories[user_id] = chat_histories[user_id][-20:]
+        
+        # Format chat history for our RAG system
+        formatted_history = [(msg["content"], None) if msg["role"] == "user" else (None, msg["content"]) 
+                             for msg in chat_histories[user_id][:-1]]
+        
+        # Get response from RAG system
+        response = rag_system.query(message.message, formatted_history)
+        
+        # Add response to history
+        chat_histories[user_id].append({"role": "assistant", "content": response})
+        
+        return ChatResponse(response=response)
+    except Exception as e:
+        print(f"Error in chat endpoint: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request"
+        )
 
 @app.get("/api/chat/history")
 async def get_chat_history(user_id: str = Depends(get_current_user)):
