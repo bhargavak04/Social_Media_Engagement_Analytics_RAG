@@ -78,18 +78,53 @@ class SocialMediaEngagementRAG:
         self._loaded = True
 
     def _generate_statistical_summaries(self, df):
-        # ... (keep your summary logic, but operate on passed-in df)
-        # Save stats to self.stats and also to stats.json for reuse
-        # After this, df can be deleted
-        pass
+        """Generate statistical summaries to be included in the vector store"""
+        # Convert NumPy types to native Python types
+        def convert_numpy_types(obj):
+            if isinstance(obj, dict):
+                return {k: convert_numpy_types(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [convert_numpy_types(item) for item in obj]
+            elif isinstance(obj, (np.int8, np.int16, np.int32, np.int64,
+                               np.uint8, np.uint16, np.uint32, np.uint64)):
+                return int(obj)
+            elif isinstance(obj, (np.float16, np.float32, np.float64)):
+                return float(obj)
+            return obj
+
+        # Common statistics across all data
+        self.stats = {
+            "total_posts": int(len(df)),
+            "post_type_distribution": convert_numpy_types(df['post_type'].value_counts().to_dict()),
+            "avg_engagement_by_type": convert_numpy_types(df.groupby('post_type')[['likes', 'comments', 'shares', 'views']].mean().to_dict()),
+            "best_time_by_post_type": {},
+            "best_day_by_post_type": {},
+            "engagement_rate_by_type": {}
+        }
+        
+        # Calculate engagement rate (likes + comments + shares) / views
+        df['engagement_rate'] = (df['likes'] + df['comments'] + df['shares']) / df['views']
+        
+        # Find best posting times by post type
+        for post_type in df['post_type'].unique():
+            post_type_df = df[df['post_type'] == post_type]
+            
+            # Best hour analysis
+            hour_engagement = post_type_df.groupby('hour')['engagement_rate'].mean().sort_values(ascending=False)
+            self.stats["best_time_by_post_type"][post_type] = int(hour_engagement.index[0])
+            
+            # Best day analysis
+            day_engagement = post_type_df.groupby('day_of_week')['engagement_rate'].mean().sort_values(ascending=False)
+            self.stats["best_day_by_post_type"][post_type] = str(day_engagement.index[0])
+            
+            # Overall engagement rate
+            self.stats["engagement_rate_by_type"][post_type] = float(post_type_df['engagement_rate'].mean())
+        
+        # Save stats to JSON for reuse
+        with open("stats.json", "w") as f:
+            json.dump(self.stats, f)
 
     def _create_documents(self, df):
-        # ... (operate on passed-in df)
-        pass
-    
-
-    
-    def _generate_statistical_summaries(self):
         """Generate statistical summaries to be included in the vector store"""
         # Convert NumPy types to native Python types
         def convert_numpy_types(obj):
@@ -132,7 +167,7 @@ class SocialMediaEngagementRAG:
             # Overall engagement rate
             self.stats["engagement_rate_by_type"][post_type] = float(post_type_df['engagement_rate'].mean())
     
-    def _create_documents(self) -> List[Document]:
+    def _create_documents(self, df) -> List[Document]:
         """Convert dataframe rows and statistics into LangChain documents"""
         documents = []
         
@@ -180,8 +215,8 @@ class SocialMediaEngagementRAG:
         documents.append(stat_doc)
         
         # Add detailed post type analysis documents
-        for post_type in self.df['post_type'].unique():
-            pt_df = self.df[self.df['post_type'] == post_type]
+        for post_type in df['post_type'].unique():
+            pt_df = df[df['post_type'] == post_type]
             
             # Time analysis
             hour_engagement = pt_df.groupby('hour')['engagement_rate'].mean().sort_values(ascending=False)
