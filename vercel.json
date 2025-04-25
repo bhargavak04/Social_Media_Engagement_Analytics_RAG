@@ -1,8 +1,8 @@
 {
-  "buildCommand": "npm install && npm run build",
+  "buildCommand": "npm install --force && npm run build --no-optional",
   "outputDirectory": "frontend/dist",
   "framework": "vite",
-  "installCommand": "npm install",
+  "installCommand": "npm install --force",
   "rewrites": [
     {
       "source": "/(.*)",
