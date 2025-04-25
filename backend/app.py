@@ -17,10 +17,12 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Frontend URLs
+    allow_origins=["https://social-media-engagement-analytics-rag.vercel.app", "http://localhost:5173", "*"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"],
+    expose_headers=["Content-Length", "Access-Control-Allow-Origin"],
+    max_age=3600
 )
 
 # Initialize the RAG system
