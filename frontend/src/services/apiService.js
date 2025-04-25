@@ -3,7 +3,7 @@
 import axios from 'axios';
 
 // Set base URL for API requests
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://social-media-engagement-analytics-rag.vercel.app/api';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -11,6 +11,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
 // Add auth token to requests
@@ -32,6 +33,11 @@ const chatService = {
       const response = await api.post('/chat', {
         message,
         user_id: userId,
+      }, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST',
+        }
       });
       
       return response.data.response;
