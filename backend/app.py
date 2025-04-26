@@ -8,9 +8,7 @@ import os
 from social_media_rag import SocialMediaEngagementRAG  # Import our RAG class
 from fastapi import Request, Response
 
-@app.options("/api/chat", include_in_schema=False)
-async def options_chat(request: Request):
-    return Response(status_code=200)
+
 
 # Initialize the FastAPI app
 app = FastAPI(
@@ -81,6 +79,10 @@ def root():
 async def ping():
     return {"pong": True}
 
+@app.options("/api/chat", include_in_schema=False)
+async def options_chat(request: Request):
+    return Response(status_code=200)
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, user_id: str = Depends(get_current_user)):
     """Process a chat message and return a response from the RAG system"""
@@ -112,9 +114,7 @@ async def chat(message: ChatMessage, user_id: str = Depends(get_current_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while processing your request"
         )
-@app.options("/api/chat", include_in_schema=False)
-async def options_chat(request: Request):
-    return Response(status_code=200)
+
 
 @app.get("/api/chat/history")
 async def get_chat_history(user_id: str = Depends(get_current_user)):
