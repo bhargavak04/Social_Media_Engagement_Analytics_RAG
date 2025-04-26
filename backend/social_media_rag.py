@@ -26,15 +26,12 @@ class SocialMediaEngagementRAG:
         self.stats = None
         self.prompt = None
         self._loaded = False
+        self.df = None
 
     def load(self):
         if self._loaded:
             return
-        import pandas as pd
-        from langchain_community.embeddings import HuggingFaceEmbeddings
-        from langchain_groq import ChatGroq
-        from langchain_community.vectorstores import FAISS
-        from langchain.prompts import PromptTemplate
+        
         # Load embeddings and LLM lazily
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         self.llm = ChatGroq(model="llama3-8b-8192")  # Use a smaller model for memory
@@ -48,34 +45,48 @@ class SocialMediaEngagementRAG:
             
             Answer: """
         )
-        # Load FAISS index if present
-        index_path = "faiss_index"
-        if os.path.exists(index_path):
-            self.vector_store = FAISS.load_local(index_path, self.embeddings)
-        else:
-            df = pd.read_csv(self.data_path)
-            self._generate_statistical_summaries(df)
-            documents = self._create_documents(df)
-            self.vector_store = FAISS.from_documents(documents, self.embeddings)
-            self.vector_store.save_local(index_path)
-            del df
+        
         # Load stats from JSON if available
         stats_path = "stats.json"
         self.stats = None
         if os.path.exists(stats_path):
-            import json
-            with open(stats_path, "r") as f:
-                self.stats = json.load(f)
-        # If stats is still None, regenerate from CSV
-        if self.stats is None:
+            try:
+                with open(stats_path, "r") as f:
+                    self.stats = json.load(f)
+            except json.JSONDecodeError:
+                print("Error loading stats.json, will regenerate")
+                self.stats = None
+        
+        # Load FAISS index if present
+        index_path = "faiss_index"
+        if os.path.exists(index_path):
+            try:
+                self.vector_store = FAISS.load_local(index_path, self.embeddings)
+            except Exception as e:
+                print(f"Error loading FAISS index: {e}, will regenerate")
+                self.vector_store = None
+        
+        # If vector_store is None or stats is None, regenerate from CSV
+        if self.vector_store is None or self.stats is None:
             if not os.path.exists(self.data_path):
                 raise RuntimeError("Stats not found and data file missing. Cannot initialize analytics.")
-            df = pd.read_csv(self.data_path)
-            self._generate_statistical_summaries(df)
-            # self._generate_statistical_summaries should set self.stats
+            
+            self.df = pd.read_csv(self.data_path)
             if self.stats is None:
-                raise RuntimeError("Failed to generate statistics from data.")
+                self._generate_statistical_summaries(self.df)
+            
+            if self.vector_store is None:
+                documents = self._create_documents(self.df)
+                self.vector_store = FAISS.from_documents(documents, self.embeddings)
+                self.vector_store.save_local(index_path)
+        
         self._loaded = True
+
+    def _unload(self):
+        """Unload resources to save memory"""
+        if self.df is not None:
+            del self.df
+            self.df = None
 
     def _generate_statistical_summaries(self, df):
         """Generate statistical summaries to be included in the vector store"""
@@ -111,11 +122,17 @@ class SocialMediaEngagementRAG:
             
             # Best hour analysis
             hour_engagement = post_type_df.groupby('hour')['engagement_rate'].mean().sort_values(ascending=False)
-            self.stats["best_time_by_post_type"][post_type] = int(hour_engagement.index[0])
+            if not hour_engagement.empty:
+                self.stats["best_time_by_post_type"][post_type] = int(hour_engagement.index[0])
+            else:
+                self.stats["best_time_by_post_type"][post_type] = 12  # Default to noon if no data
             
             # Best day analysis
             day_engagement = post_type_df.groupby('day_of_week')['engagement_rate'].mean().sort_values(ascending=False)
-            self.stats["best_day_by_post_type"][post_type] = str(day_engagement.index[0])
+            if not day_engagement.empty:
+                self.stats["best_day_by_post_type"][post_type] = str(day_engagement.index[0])
+            else:
+                self.stats["best_day_by_post_type"][post_type] = "Monday"  # Default to Monday if no data
             
             # Overall engagement rate
             self.stats["engagement_rate_by_type"][post_type] = float(post_type_df['engagement_rate'].mean())
@@ -124,49 +141,6 @@ class SocialMediaEngagementRAG:
         with open("stats.json", "w") as f:
             json.dump(self.stats, f)
 
-    def _create_documents(self, df):
-        """Generate statistical summaries to be included in the vector store"""
-        # Convert NumPy types to native Python types
-        def convert_numpy_types(obj):
-            if isinstance(obj, dict):
-                return {k: convert_numpy_types(v) for k, v in obj.items()}
-            elif isinstance(obj, (list, tuple)):
-                return [convert_numpy_types(item) for item in obj]
-            elif isinstance(obj, (np.int8, np.int16, np.int32, np.int64,
-                               np.uint8, np.uint16, np.uint32, np.uint64)):
-                return int(obj)
-            elif isinstance(obj, (np.float16, np.float32, np.float64)):
-                return float(obj)
-            return obj
-
-        # Common statistics across all data
-        self.stats = {
-            "total_posts": int(len(self.df)),
-            "post_type_distribution": convert_numpy_types(self.df['post_type'].value_counts().to_dict()),
-            "avg_engagement_by_type": convert_numpy_types(self.df.groupby('post_type')[['likes', 'comments', 'shares', 'views']].mean().to_dict()),
-            "best_time_by_post_type": {},
-            "best_day_by_post_type": {},
-            "engagement_rate_by_type": {}
-        }
-        
-        # Calculate engagement rate (likes + comments + shares) / views
-        self.df['engagement_rate'] = (self.df['likes'] + self.df['comments'] + self.df['shares']) / self.df['views']
-        
-        # Find best posting times by post type
-        for post_type in self.df['post_type'].unique():
-            post_type_df = self.df[self.df['post_type'] == post_type]
-            
-            # Best hour analysis
-            hour_engagement = post_type_df.groupby('hour')['engagement_rate'].mean().sort_values(ascending=False)
-            self.stats["best_time_by_post_type"][post_type] = int(hour_engagement.index[0])
-            
-            # Best day analysis
-            day_engagement = post_type_df.groupby('day_of_week')['engagement_rate'].mean().sort_values(ascending=False)
-            self.stats["best_day_by_post_type"][post_type] = str(day_engagement.index[0])
-            
-            # Overall engagement rate
-            self.stats["engagement_rate_by_type"][post_type] = float(post_type_df['engagement_rate'].mean())
-    
     def _create_documents(self, df) -> List[Document]:
         """Convert dataframe rows and statistics into LangChain documents"""
         documents = []
@@ -220,11 +194,11 @@ class SocialMediaEngagementRAG:
             
             # Time analysis
             hour_engagement = pt_df.groupby('hour')['engagement_rate'].mean().sort_values(ascending=False)
-            top_hours = hour_engagement.head(3).index.tolist()
+            top_hours = hour_engagement.head(3).index.tolist() if not hour_engagement.empty else [12, 18, 9]
             
             # Day analysis
             day_engagement = pt_df.groupby('day_of_week')['engagement_rate'].mean().sort_values(ascending=False)
-            top_days = day_engagement.head(3).index.tolist()
+            top_days = day_engagement.head(3).index.tolist() if not day_engagement.empty else ["Monday", "Thursday", "Saturday"]
             
             doc = Document(
                 page_content=f"""
@@ -237,7 +211,7 @@ class SocialMediaEngagementRAG:
                 Best posting hours: {top_hours}
                 Best posting days: {top_days}
                 Post count: {len(pt_df)}
-                Performance compared to other types: {self._get_comparative_rank(post_type)}
+                Performance compared to other types: {self._get_comparative_rank(df, post_type)}
                 """,
                 metadata={
                     "document_type": "post_type_analysis",
@@ -250,7 +224,7 @@ class SocialMediaEngagementRAG:
         hour_doc = Document(
             page_content=f"""
             Hour of day engagement analysis:
-            {self._format_hour_analysis()}
+            {self._format_hour_analysis(df)}
             """,
             metadata={"document_type": "time_analysis"}
         )
@@ -259,16 +233,16 @@ class SocialMediaEngagementRAG:
         day_doc = Document(
             page_content=f"""
             Day of week engagement analysis:
-            {self._format_day_analysis()}
+            {self._format_day_analysis(df)}
             """,
             metadata={"document_type": "day_analysis"}
         )
         documents.append(day_doc)
         
         # Add "improvement recommendations" documents specific to each post type
-        for post_type in self.df['post_type'].unique():
+        for post_type in df['post_type'].unique():
             doc = Document(
-                page_content=self._get_improvement_recommendations(post_type),
+                page_content=self._get_improvement_recommendations(df, post_type),
                 metadata={
                     "document_type": "recommendations",
                     "post_type": post_type
@@ -277,7 +251,7 @@ class SocialMediaEngagementRAG:
             documents.append(doc)
         
         # Add sample post data (every 100th post to avoid too many documents)
-        for i, row in self.df.iloc[::100].iterrows():
+        for i, row in df.iloc[::100].iterrows():
             doc = Document(
                 page_content=f"""
                 Sample {row['post_type']} post:
@@ -298,7 +272,7 @@ class SocialMediaEngagementRAG:
         
         return documents
     
-    def _get_comparative_rank(self, post_type):
+    def _get_comparative_rank(self, df, post_type):
         """Generate comparative analysis text for a given post type"""
         # Get average metrics for this post type
         metrics = self.stats['avg_engagement_by_type']
@@ -314,7 +288,7 @@ class SocialMediaEngagementRAG:
         for metric in ['likes', 'comments', 'shares', 'views']:
             metric_values = {pt: metrics[metric][pt] for pt in metrics['likes'].keys()}
             sorted_types = sorted(metric_values.items(), key=lambda x: x[1], reverse=True)
-            rank = next(i+1 for i, (pt, _) in enumerate(sorted_types) if pt == post_type)
+            rank = next((i+1 for i, (pt, _) in enumerate(sorted_types) if pt == post_type), len(sorted_types))
             total = len(sorted_types)
             comparison.append(f"{metric}: {rank} of {total}")
         
@@ -329,48 +303,57 @@ class SocialMediaEngagementRAG:
         
         return result
     
-    def _format_hour_analysis(self):
+    def _format_hour_analysis(self, df):
         """Format hour-by-hour engagement analysis"""
-        hour_engagement = self.df.groupby('hour')['engagement_rate'].mean().sort_values(ascending=False)
-        top_hours = hour_engagement.head(5).index.tolist()
-        bottom_hours = hour_engagement.tail(5).index.tolist()
+        hour_engagement = df.groupby('hour')['engagement_rate'].mean().sort_values(ascending=False)
+        top_hours = hour_engagement.head(5).index.tolist() if not hour_engagement.empty else [12, 18, 9, 19, 20]
+        bottom_hours = hour_engagement.tail(5).index.tolist() if not hour_engagement.empty else [3, 4, 5, 2, 1]
         
         result = f"Peak engagement hours: {top_hours}\n"
         result += f"Lowest engagement hours: {bottom_hours}\n\n"
         
         # Add type-specific best hours
         result += "Best hours by post type:\n"
-        for post_type in self.df['post_type'].unique():
+        for post_type in df['post_type'].unique():
             best_hour = self.stats["best_time_by_post_type"][post_type]
             result += f"- {post_type}: {best_hour}:00\n"
         
         return result
     
-    def _format_day_analysis(self):
+    def _format_day_analysis(self, df):
         """Format day-by-day engagement analysis"""
-        day_engagement = self.df.groupby('day_of_week')['engagement_rate'].mean().sort_values(ascending=False)
+        day_engagement = df.groupby('day_of_week')['engagement_rate'].mean().sort_values(ascending=False)
         
         result = "Day of week engagement ranking (best to worst):\n"
-        for i, (day, rate) in enumerate(day_engagement.items(), 1):
-            result += f"{i}. {day}: {rate:.3f} engagement rate\n"
+        if not day_engagement.empty:
+            for i, (day, rate) in enumerate(day_engagement.items(), 1):
+                result += f"{i}. {day}: {rate:.3f} engagement rate\n"
+        else:
+            result += "(No day-specific engagement data available)\n"
         
         result += "\nBest days by post type:\n"
-        for post_type in self.df['post_type'].unique():
+        for post_type in df['post_type'].unique():
             best_day = self.stats["best_day_by_post_type"][post_type]
             result += f"- {post_type}: {best_day}\n"
         
         return result
     
-    def _get_improvement_recommendations(self, post_type):
+    def _get_improvement_recommendations(self, df, post_type):
         """Generate improvement recommendations for a specific post type"""
-        pt_df = self.df[self.df['post_type'] == post_type]
+        pt_df = df[df['post_type'] == post_type]
         best_hour = self.stats["best_time_by_post_type"][post_type]
         best_day = self.stats["best_day_by_post_type"][post_type]
         
         # Find high-performing content patterns
-        high_engagement = pt_df.nlargest(int(len(pt_df) * 0.1), 'engagement_rate')
-        avg_hashtags = high_engagement['content'].apply(lambda x: x.count('#')).mean()
-        avg_text_length = high_engagement['content'].apply(len).mean()
+        high_engagement_count = max(1, int(len(pt_df) * 0.1))  # Ensure at least 1 row
+        high_engagement = pt_df.nlargest(high_engagement_count, 'engagement_rate')
+        
+        avg_hashtags = 0
+        avg_text_length = 0
+        
+        if not high_engagement.empty:
+            avg_hashtags = high_engagement['content'].apply(lambda x: x.count('#') if isinstance(x, str) else 0).mean()
+            avg_text_length = high_engagement['content'].apply(lambda x: len(x) if isinstance(x, str) else 0).mean()
         
         recommendations = f"""
         Improvement recommendations for {post_type} posts:
@@ -490,6 +473,11 @@ class SocialMediaEngagementRAG:
                     if ai is not None:
                         formatted_history.extend([f"Assistant: {ai}"])
             
+            # Calculate engagement rates as percentages for display
+            engagement_rates = {}
+            for post_type, rate in self.stats['engagement_rate_by_type'].items():
+                engagement_rates[post_type] = f"{rate:.2%}"
+            
             # Format statistics directly
             stats_content = f"""
             SOCIAL MEDIA ANALYTICS SUMMARY
@@ -504,7 +492,7 @@ class SocialMediaEngagementRAG:
             - Average views: {self.stats['avg_engagement_by_type']['views']['reel']:.1f}
             - Best posting time: {self.stats['best_time_by_post_type']['reel']:02d}:00 hours
             - Best posting day: {self.stats['best_day_by_post_type']['reel']}
-            - Average engagement rate: {self.stats['engagement_rate_by_type']['reel']:.2%}
+            - Average engagement rate: {engagement_rates['reel']}
             
             IMAGE POSTS:
             - Average likes: {self.stats['avg_engagement_by_type']['likes']['image']:.1f}
@@ -513,7 +501,7 @@ class SocialMediaEngagementRAG:
             - Average views: {self.stats['avg_engagement_by_type']['views']['image']:.1f}
             - Best posting time: {self.stats['best_time_by_post_type']['image']:02d}:00 hours
             - Best posting day: {self.stats['best_day_by_post_type']['image']}
-            - Average engagement rate: {self.stats['engagement_rate_by_type']['image']:.2%}
+            - Average engagement rate: {engagement_rates['image']}
             
             VIDEO POSTS:
             - Average likes: {self.stats['avg_engagement_by_type']['likes']['video']:.1f}
@@ -522,7 +510,7 @@ class SocialMediaEngagementRAG:
             - Average views: {self.stats['avg_engagement_by_type']['views']['video']:.1f}
             - Best posting time: {self.stats['best_time_by_post_type']['video']:02d}:00 hours
             - Best posting day: {self.stats['best_day_by_post_type']['video']}
-            - Average engagement rate: {self.stats['engagement_rate_by_type']['video']:.2%}
+            - Average engagement rate: {engagement_rates['video']}
             
             CAROUSEL POSTS:
             - Average likes: {self.stats['avg_engagement_by_type']['likes']['carousel']:.1f}
@@ -531,7 +519,7 @@ class SocialMediaEngagementRAG:
             - Average views: {self.stats['avg_engagement_by_type']['views']['carousel']:.1f}
             - Best posting time: {self.stats['best_time_by_post_type']['carousel']:02d}:00 hours
             - Best posting day: {self.stats['best_day_by_post_type']['carousel']}
-            - Average engagement rate: {self.stats['engagement_rate_by_type']['carousel']:.2%}
+            - Average engagement rate: {engagement_rates['carousel']}
             
             OTHER STATISTICS:
             - Total posts analyzed: {self.stats['total_posts']}
@@ -551,16 +539,95 @@ class SocialMediaEngagementRAG:
             return result.content
 
         except Exception as e:
+            import traceback
             print(f"Error in query method: {str(e)}")
-            raise
+            print(traceback.format_exc())
+            return f"An error occurred while processing your request: {str(e)}"
 
         finally:
             try:
                 self._unload()
             except Exception as e:
                 print(f"Error during unload: {str(e)}")
-
     
     def generate_charts(self, chart_type="engagement_by_post_type"):
         """Generate visualization charts for various analytics"""
-        pass
+        try:
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            
+            # Load data if not already loaded
+            if self.df is None:
+                self.df = pd.read_csv(self.data_path)
+            
+            # Set styling
+            plt.style.use('ggplot')
+            
+            if chart_type == "engagement_by_post_type":
+                # Create a comparison chart of engagement metrics by post type
+                fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+                fig.suptitle('Engagement Metrics by Post Type', fontsize=16)
+                
+                metrics = ['likes', 'comments', 'shares', 'views']
+                for i, metric in enumerate(metrics):
+                    row, col = i // 2, i % 2
+                    ax = axes[row, col]
+                    
+                    data = [self.stats['avg_engagement_by_type'][metric][pt] for pt in ['image', 'video', 'reel', 'carousel']]
+                    ax.bar(['Image', 'Video', 'Reel', 'Carousel'], data, color=sns.color_palette("husl", 4))
+                    ax.set_title(f'Average {metric.capitalize()}')
+                    ax.set_ylabel(metric.capitalize())
+                    
+                    # Add values on top of bars
+                    for j, v in enumerate(data):
+                        ax.text(j, v + 0.1, f"{v:.1f}", ha='center')
+                
+                plt.tight_layout(rect=[0, 0, 1, 0.95])
+                plt.savefig('engagement_by_post_type.png')
+                return 'engagement_by_post_type.png'
+                
+            elif chart_type == "best_times":
+                # Create a heatmap of engagement by hour and day
+                pivot = self.df.pivot_table(
+                    index='day_of_week', 
+                    columns='hour', 
+                    values='engagement_rate', 
+                    aggfunc='mean'
+                )
+                
+                # Define day order
+                days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                pivot = pivot.reindex(days)
+                
+                plt.figure(figsize=(14, 8))
+                sns.heatmap(pivot, cmap="YlGnBu", annot=True, fmt=".3f", linewidths=.5)
+                plt.title('Engagement Rate by Day and Hour', fontsize=16)
+                plt.xlabel('Hour of Day')
+                plt.ylabel('Day of Week')
+                plt.tight_layout()
+                plt.savefig('best_posting_times.png')
+                return 'best_posting_times.png'
+                
+            elif chart_type == "post_type_distribution":
+                # Create a pie chart of post type distribution
+                counts = self.stats['post_type_distribution']
+                labels = list(counts.keys())
+                sizes = list(counts.values())
+                
+                plt.figure(figsize=(10, 8))
+                plt.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=sns.color_palette("husl", len(labels)))
+                plt.axis('equal')
+                plt.title('Distribution of Post Types', fontsize=16)
+                plt.tight_layout()
+                plt.savefig('post_type_distribution.png')
+                return 'post_type_distribution.png'
+                
+            elif chart_type == "engagement_rate_comparison":
+                # Create a bar chart comparing engagement rates
+                plt.figure(figsize=(10, 6))
+                rates = [self.stats['engagement_rate_by_type'][pt] for pt in ['image', 'video', 'reel', 'carousel']]
+                plt.bar(['Image', 'Video', 'Reel', 'Carousel'], rates, color=sns.color_palette("husl", 4))
+                plt.title('Engagement Rate by Post Type', fontsize=16)
+                plt.ylabel('Engagement Rate')
+        finally:
+            print("Charts Generated")   # Add percentage values on top of
