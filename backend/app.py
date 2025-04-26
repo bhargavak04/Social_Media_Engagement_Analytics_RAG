@@ -19,10 +19,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://social-media-engagement-analytics-rag.vercel.app", "http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=[],
-    max_age=3600
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    expose_headers=["Content-Length"],
+    max_age=3600,
+    allow_origin_regex=None
 )
 
 # Initialize the RAG system
