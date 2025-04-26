@@ -6,6 +6,11 @@ from typing import List, Dict, Any, Optional
 import json
 import os
 from social_media_rag import SocialMediaEngagementRAG  # Import our RAG class
+from fastapi import Request, Response
+
+@app.options("/api/chat", include_in_schema=False)
+async def options_chat(request: Request):
+    return Response(status_code=200)
 
 # Initialize the FastAPI app
 app = FastAPI(
