@@ -81,7 +81,13 @@ async def ping():
 
 @app.options("/api/chat", include_in_schema=False)
 async def options_chat(request: Request):
-    return Response(status_code=200)
+    headers = {
+        "Access-Control-Allow-Origin": request.headers.get("origin") or "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+        "Access-Control-Allow-Credentials": "true",
+    }
+    return Response(status_code=200, headers=headers)
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, user_id: str = Depends(get_current_user)):
